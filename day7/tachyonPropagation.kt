@@ -3,7 +3,6 @@ package day7
 import java.io.File
 
 fun List<Long>.propagate(nextLine: String): Pair<List<Long>, Long> {
-    val nextLineChars = nextLine.toCharArray()
     val propagation: MutableList<Long> = MutableList(this.size) { 0L }
     var splits = 0L
     for ((i, char) in nextLine.withIndex()) {
