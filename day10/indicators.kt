@@ -3,21 +3,15 @@ package day10
 import java.io.File
 import kotlin.math.pow
 
-var cache: MutableMap<Pair<Int, List<Int>>, Int> = mutableMapOf()
-fun ((Int, List<Int>) -> Int).memoized(): (Int, List<Int>) -> Int {
+var cache: MutableMap<List<Int>, Int> = mutableMapOf()
+fun ((List<Int>, List<String>) -> Int).memoized(): (List<Int>, List<String>) -> Int {
     //println("cache size = ${cache.size}")
     return { param1, param2 ->
-        cache.getOrPut(param1 to param2) {
+        cache.getOrPut(param1) {
             this(param1, param2)
         }
     }
 }
-
-
-fun String.hammingDistance(anotherBitString: String) =
-    this.zip(anotherBitString).filter {
-        it.first != it.second
-    }.size
 
 fun Char.toBoolean() =
     when (this) {
@@ -33,68 +27,8 @@ fun String.xor(anotherBitString: String) =
         it.first.toBoolean().xor(it.second.toBoolean()).toChar()
     }.joinToString("")
 
-fun String.shortestPathTo(buttons: List<String>): Map<String, Int> {
-    val binaryUpperBound = (2.0.pow(this.length)).toInt()
-    val minDistances = (0..<binaryUpperBound).associate {
-        it.toString(2).padStart(this.length, '0') to Int.MAX_VALUE
-    }.toMutableMap()
 
-    minDistances[this] = 0
-    val isVisited =  minDistances.keys.associateWith { false }.toMutableMap()
-
-    val queue: MutableList<String> = mutableListOf(this)
-
-    while (queue.isNotEmpty()) {
-        val currentString = queue.first()
-        queue.removeFirst()
-        isVisited[currentString] = true
-
-        val neighbors = buttons.map {
-            currentString.xor(it)
-        }.filter {
-            !(isVisited[it] ?: true)
-        }
-
-        neighbors.forEach {
-            val currentDistance = minDistances[currentString] ?: Int.MAX_VALUE
-            val tentativeMinimumDistance = minDistances[it] ?: Int.MAX_VALUE
-            if (1 + currentDistance <  tentativeMinimumDistance) {
-                minDistances[it] = 1 + currentDistance
-            }
-            queue.add(it)
-        }
-
-    }
-    return minDistances.toMap()
-}
-
-fun String.search(target: String, buttons: List<String>): Int {
-    println("$this - $target")
-    if (this == target) {
-        return 0
-    } else {
-        var minLength = Int.MAX_VALUE
-        for (button in buttons) {
-            val length = this.xor(button).search(target, buttons)
-            if (length == 0) {
-                return 1
-            } else if (length < minLength) {
-                minLength = length
-            }
-        }
-        return 1 + minLength
-    }
-}
-
-fun List<Int>.upvolt(button: String): List<Int> {
-    val newJoltages: MutableList<Int> = mutableListOf()
-    for ((joltage, bit) in this.zip(button.toList())) {
-        newJoltages.add(joltage + bit.digitToInt())
-    }
-    return newJoltages
-}
-
-fun List<Int>.downvolt(button: String): List<Int> {
+fun List<Int>.downjolt(button: String): List<Int> {
     val newJoltages: MutableList<Int> = mutableListOf()
     for ((joltage, bit) in this.zip(button.toList())) {
         newJoltages.add(joltage - bit.digitToInt())
@@ -102,45 +36,60 @@ fun List<Int>.downvolt(button: String): List<Int> {
     return newJoltages
 }
 
-fun List<Int>.bestButton(buttons: List<String>, requirements: List<Int>): Int {
-    val sortedButtons = buttons.withIndex().sortedBy {
-        it.value.toList().sumOf(Char::digitToInt)
-    }.reversed()
-
-    var i = 0
-    while(i < sortedButtons.size && this.upvolt(sortedButtons[i].value) > requirements) {
-        i += 1
+fun List<Int>.patterns(buttons: List<String>): List<String> {
+    val patternList: MutableList<String> = mutableListOf()
+    val togglePattern = this.map {
+        it % 2
+    }.joinToString("")
+    val buttonsPowersetSize = 2.0.pow(buttons.size).toInt()
+    for (i in (0..<buttonsPowersetSize)) {
+        val binary = i.toString(radix = 2).padStart(buttons.size, '0')
+        val setMembership = binary.map(Char::toBoolean)
+        val pressedButtons = buttons.zip(setMembership).filter {
+            it.second
+        }.map { it.first }
+        //println("i:$i, setmembers: ${setMembership}, pressed: $pressedButtons")
+        val pressOutcome = pressedButtons.fold("0".repeat(this.size)) { acc, string ->
+            acc.xor(string)
+        }
+        if (pressOutcome == togglePattern)
+            patternList.add(binary)
     }
-    if (i < sortedButtons.size) {
-        return sortedButtons[i].index
-    } else {
-        println("!$this < $requirements")
-        throw IllegalStateException()
-    }
+    return patternList
 }
 
-fun coinChange(joltageRequirement:Int, denoms: List<Int>): Int {
-    //println("$joltageRequirements -> $buttons")
-    if (joltageRequirement < 0) {
-        return Int.MAX_VALUE - 1000000
-    } else if (denoms.any { joltageRequirement == it }) {
-        return 1
+fun List<Int>.setDownjolt(buttons: List<String>, setMembership: String): List<Int> {
+    var downjolted = this
+    buttons.zip(setMembership.map(Char::toBoolean)).forEach { (button, isMember) ->
+        if (isMember)
+            downjolted = downjolted.downjolt(button)
     }
-    else {
-        return denoms.minOf {
-            ::coinChange.memoized()(joltageRequirement - it, denoms)
-        } + 1
-    }
+    return downjolted
 }
 
-operator fun List<Int>.compareTo(other: List<Int>): Int {
-    val pairs = this.zip(other)
-    if (pairs.all { it.first == it.second }) {
+fun List<Int>.halfjolt() =
+    this.map {
+        require(it % 2 == 0)
+        it/2
+    }
+
+fun String.sumOfOnes() = this.sumOf(Char::digitToInt)
+
+fun buttonPresses(joltageRequirements: List<Int>, buttons: List<String>): Int {
+    if (joltageRequirements.any { it < 0 }) {
+        return 100000000
+    } else if (joltageRequirements.all { it == 0 }) {
         return 0
-    } else if (pairs.all { it.first <= it.second }) {
-        return -1
     } else {
-        return 1
+        val patterns = joltageRequirements.patterns(buttons)
+        if (patterns.isEmpty())
+            return 100000000
+        val halves = patterns.map {
+            joltageRequirements.setDownjolt(buttons, it).halfjolt()
+        }
+        return halves.zip(patterns).minOf { (half, pattern) ->
+            pattern.sumOfOnes() + (2 * ::buttonPresses.memoized()(half, buttons))
+        }
     }
 }
 
@@ -149,7 +98,7 @@ fun main() {
     val joltageRequirements: MutableList<List<Int>> = mutableListOf()
     val buttons: MutableList<List<String>> = mutableListOf()
 
-    File("day10/example.in").readLines().forEach {
+    File("day10/input.in").readLines().forEach {
         val words = it.split(" ")
         val firstWord = words.first()
         indicatorRequirements.add(firstWord.slice(1..<firstWord.lastIndex).replace('.','0').replace('#','1'))
@@ -168,44 +117,19 @@ fun main() {
     println(joltageRequirements)
     println(buttons)
 
-    val joltageTotals = joltageRequirements.map { joltageRequirement ->
-        val powers = (0..joltageRequirement.lastIndex).map { 2.0.pow(it).toInt() }.reversed()
-        joltageRequirement.zip(powers).sumOf {
-            it.first * it.second
+    var totalPresses1 = 0
+    for ((indicatorRequirement,buttonSet) in indicatorRequirements.zip(buttons)) {
+        totalPresses1 += indicatorRequirement.map(Char::digitToInt).patterns(buttonSet).minOf {
+            it.sumOfOnes()
         }
     }
+    println(totalPresses1)
 
-    val buttonDenominationSets = buttons.map { buttonSet ->
-        buttonSet.map { button ->
-            button.toInt(radix = 2)
-        }
-    }
-
-    println(joltageTotals)
-    println(buttonDenominationSets)
-
-    var cumulativeSum = 0
-    for ((joltageRequirement, buttonSet) in joltageTotals.zip(buttonDenominationSets)) {
-        val result = ::coinChange.memoized()(joltageRequirement, buttonSet)
-        cumulativeSum += result
-        println(result)
-        println(cache)
+    var totalPresses2 = 0
+    for ((joltageRequirement, buttonSet) in joltageRequirements.zip(buttons)) {
+        val result = ::buttonPresses.memoized()(joltageRequirement, buttonSet)
+        totalPresses2 += result
         cache = mutableMapOf()
     }
-    println(cumulativeSum)
-
-    /*
-    println(buttons[0].map {
-        val afterPress = it.xor(indicatorRequirements[0])
-        listOf(indicatorRequirements[0], afterPress, indicatorRequirements[0].hammingDistance(afterPress))
-    })
-
-    var sum = 0
-    for (i in 0..indicatorRequirements.lastIndex) {
-        val minDistances = "0".repeat(indicatorRequirements[i].length).shortestPathTo(buttons[i])
-        sum += minDistances[indicatorRequirements[i]] ?: 0
-        println("${indicatorRequirements[i]}: ${minDistances[indicatorRequirements[i]]}")
-    }
-    println("sum: $sum")
-    */
+    println(totalPresses2)
 }
